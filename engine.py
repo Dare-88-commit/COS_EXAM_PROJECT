@@ -20,20 +20,16 @@ def add_task(title, description, priority, deadline):
     if not is_valid:
         return False, message
 
-    # Calculate duration
-    from datetime import datetime
-    deadline_date = datetime.strptime(deadline, "%Y-%m-%d").date()
-    today = datetime.now().date()
-    duration = (deadline_date - today).days
+    # Duration will be calculated by the database
 
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO tasks (title, description, priority, deadline, duration)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO tasks (title, description, priority, deadline)
+            VALUES (%s, %s, %s, %s)
             RETURNING id
-        """, (title, description, priority, deadline, duration))
+        """, (title, description, priority, deadline))
         conn.commit()
         return True, "Task added successfully."
     except psycopg2.Error as e:
@@ -45,24 +41,27 @@ def add_task(title, description, priority, deadline):
 
 def delete_task(task_id):
     conn = get_connection()
-    cur = conn.cursor()
     try:
-        cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
-        cur.execute("""
-            UPDATE tasks SET id = new_id
-            FROM (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY id) as new_id 
-                FROM tasks
-            ) as renumbered
-            WHERE tasks.id = renumbered.id
-        """)
-        conn.commit()
-        return True, "Task deleted successfully."
-    except psycopg2.Error as e:
-        return False, f"Database error: {e}"
-    finally:
-        cur.close()
-        conn.close()
+        with conn.cursor() as cur:
+            # Delete the task
+            cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+            # Reassign IDs
+            cur.execute("""
+                UPDATE tasks SET id = new_id
+                FROM (
+                    SELECT id, ROW_NUMBER() OVER (ORDER BY id) as new_id 
+                    FROM tasks
+                ) as renumbered
+                WHERE tasks.id = renumbered.id
+            """)
+            # Reset sequence
+            cur.execute("ALTER SEQUENCE tasks_id_seq RESTART WITH 1")
+            cur.execute(
+                "SELECT setval('tasks_id_seq', (SELECT MAX(id) FROM tasks))")
+            conn.commit()
+        return True, "Task deleted and IDs reordered"
+    except Exception as e:
+        return False, str(e)
 
 
 def get_all_tasks():
@@ -70,7 +69,10 @@ def get_all_tasks():
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT id, title, description, priority, deadline, duration 
+            SELECT id, title, description, priority, deadline, completed,
+                   CASE WHEN deadline IS NOT NULL 
+                        THEN deadline - CURRENT_DATE 
+                        ELSE NULL END as duration
             FROM tasks 
             ORDER BY created_at
         """)
@@ -88,7 +90,10 @@ def search_tasks(keyword):
     try:
         search_term = f"%{keyword}%"
         cur.execute("""
-            SELECT id, title, description, priority, deadline, duration
+            SELECT id, title, description, priority, deadline, 
+                   CASE WHEN deadline IS NOT NULL 
+                        THEN deadline - CURRENT_DATE 
+                        ELSE NULL END as duration
             FROM tasks
             WHERE title ILIKE %s OR description ILIKE %s
             ORDER BY deadline
@@ -106,18 +111,16 @@ def update_task(task_id, title, description, priority, deadline):
     if not is_valid:
         return False, message
 
-    today = datetime.now().date()
-    deadline_date = datetime.strptime(deadline, "%Y-%m-%d").date()
-    duration = (deadline_date - today).days
+    # Duration will be calculated by the database
 
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
             UPDATE tasks 
-            SET title = %s, description = %s, priority = %s, deadline = %s, duration = %s
+            SET title = %s, description = %s, priority = %s, deadline = %s
             WHERE id = %s
-        """, (title, description, priority, deadline, duration, task_id))
+        """, (title, description, priority, deadline, task_id))
         conn.commit()
         return True, "Task updated successfully"
     except psycopg2.Error as e:
@@ -132,7 +135,10 @@ def get_task_details(task_id):
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT id, title, description, priority, deadline, duration 
+            SELECT id, title, description, priority, deadline, 
+                   CASE WHEN deadline IS NOT NULL 
+                        THEN deadline - CURRENT_DATE 
+                        ELSE NULL END as duration
             FROM tasks WHERE id = %s
         """, (task_id,))
         task = cur.fetchone()

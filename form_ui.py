@@ -1,150 +1,180 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
-from engine import add_task, delete_task, update_task, get_all_tasks, get_task_details
-from task_display import refresh_tasks
+from tkinter import ttk, messagebox, simpledialog
+import ttkbootstrap as tb
+from datetime import datetime
 
 
-def create_form_ui(root, tree):
-    frame = tk.Frame(root, bg="#f0f0f0", padx=15,
-                     pady=15, bd=2, relief=tk.GROOVE)
-    frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+class TaskSchedulerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Smart Task Scheduler")
+        self.root.geometry("800x600")
+        self.style = tb.Style("flatly")  # Light theme
 
-    style = ttk.Style()
-    style.configure("TLabel", background="#f0f0f0", font=("Arial", 10))
-    style.configure("TButton", font=("Arial", 10, "bold"), padding=5)
-    style.configure("TEntry", padding=5)
-    style.map("TButton", background=[("active", "#45a049")])
+        self.task_data = []
 
-    ttk.Label(frame, text="Title:").grid(row=0, column=0, sticky="w", pady=5)
-    title_entry = ttk.Entry(frame, width=30, font=("Arial", 10))
-    title_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.create_widgets()
 
-    ttk.Label(frame, text="Description:").grid(
-        row=1, column=0, sticky="w", pady=5)
-    desc_entry = ttk.Entry(frame, width=30, font=("Arial", 10))
-    desc_entry.grid(row=1, column=1, padx=5, pady=5)
+    def create_widgets(self):
+        # ---------- INPUT FRAME ----------
+        input_frame = ttk.LabelFrame(
+            self.root, text="Add New Task", padding=20)
+        input_frame.pack(fill="x", padx=20, pady=10)
 
-    ttk.Label(frame, text="Priority:").grid(
-        row=2, column=0, sticky="w", pady=5)
-    priority_var = tk.StringVar(value="Medium")
-    priority_menu = ttk.OptionMenu(
-        frame, priority_var, "Medium", "Low", "Medium", "High")
-    priority_menu.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
+        ttk.Label(input_frame, text="Title:").grid(row=0, column=0, sticky="w")
+        self.title_entry = ttk.Entry(input_frame, width=30)
+        self.title_entry.grid(row=0, column=1, padx=10, pady=5)
 
-    ttk.Label(frame, text="Deadline (YYYY-MM-DD):").grid(row=3,
-                                                         column=0, sticky="w", pady=5)
-    deadline_entry = ttk.Entry(frame, width=30, font=("Arial", 10))
-    deadline_entry.grid(row=3, column=1, padx=5, pady=5)
+        ttk.Label(input_frame, text="Description:").grid(
+            row=1, column=0, sticky="w")
+        self.desc_entry = ttk.Entry(input_frame, width=30)
+        self.desc_entry.grid(row=1, column=1, padx=10, pady=5)
 
-    button_frame = tk.Frame(frame, bg="#f0f0f0")
-    button_frame.grid(row=4, column=0, columnspan=2, pady=10)
+        ttk.Label(input_frame, text="Priority:").grid(
+            row=0, column=2, sticky="w")
+        self.priority_combo = ttk.Combobox(
+            input_frame, values=["High", "Medium", "Low"], state="readonly")
+        self.priority_combo.grid(row=0, column=3, padx=10, pady=5)
+        self.priority_combo.set("Medium")
 
-    def clear_form():
-        title_entry.delete(0, tk.END)
-        desc_entry.delete(0, tk.END)
-        priority_var.set("Medium")
-        deadline_entry.delete(0, tk.END)
-        add_btn.config(text="Add Task", command=handle_add,
-                       bg="#4CAF50", activebackground="#45a049")
+        ttk.Label(input_frame, text="Deadline (YYYY-MM-DD):").grid(
+            row=1, column=2, sticky="w")
+        self.deadline_entry = ttk.Entry(input_frame, width=18)
+        self.deadline_entry.grid(row=1, column=3, padx=10, pady=5)
+        self.deadline_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
 
-    def get_selected_task_id():
-        selected = tree.focus()
+        ttk.Label(input_frame, text="Duration (mins):").grid(
+            row=3, column=0, sticky="w", pady=5)
+        self.duration_entry = ttk.Spinbox(
+            input_frame, from_=1, to=1440, width=8)
+        self.duration_entry.grid(row=3, column=1, padx=5, pady=5, sticky="w")
+        self.duration_entry.set(60)  # Default to 60 minutes
+
+        # Add calendar button
+        ttk.Button(
+            input_frame,
+            text="📅",
+            command=self.show_calendar_picker,
+            width=3
+        ).grid(row=1, column=4, padx=2)
+
+        # ---------- BUTTONS ----------
+        button_frame = ttk.Frame(self.root)
+        button_frame.pack(fill="x", padx=20, pady=5)
+
+        self.add_btn = ttk.Button(
+            button_frame, text="Add Task", command=self.add_task)
+        self.add_btn.pack(side="left", padx=10)
+
+        self.edit_btn = ttk.Button(
+            button_frame, text="Edit Task", command=self.edit_task)
+        self.edit_btn.pack(side="left", padx=10)
+
+        self.delete_btn = ttk.Button(
+            button_frame, text="Delete Task", command=self.delete_task)
+        self.delete_btn.pack(side="left", padx=10)
+
+        self.clear_btn = ttk.Button(
+            search_frame, text="Clear", command=self.load_tasks)
+        self.clear_btn.pack(side='left', padx=5)
+
+        # ---------- TASK DISPLAY ----------
+        table_frame = ttk.Frame(self.root)
+        table_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        columns = ("Title", "Description", "Priority", "Deadline")
+        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, anchor="center", stretch=True)
+
+        scrollbar = ttk.Scrollbar(
+            table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # ---------- STATUS BAR ----------
+        self.status_label = ttk.Label(
+            self.root, text="Welcome to Smart Task Scheduler!", anchor="center")
+        self.status_label.pack(fill="x", pady=5)
+
+    def show_calendar_picker(self):
+        """Alternative calendar picker using simpledialog"""
+        date_str = simpledialog.askstring(
+            "Select Date", "Enter date (YYYY-MM-DD):")
+        if date_str:
+            try:
+                # Validate date format
+                datetime.strptime(date_str, "%Y-%m-%d")
+                self.deadline_entry.delete(0, tk.END)
+                self.deadline_entry.insert(0, date_str)
+            except ValueError:
+                self.status_label.config(
+                    text="Invalid date format (use YYYY-MM-DD)", foreground="red")
+
+    # ---------- DUMMY CALLBACKS (PLACEHOLDERS) ----------
+    def add_task(self):
+        title = self.title_entry.get()
+        desc = self.desc_entry.get()
+        priority = self.priority_combo.get()
+        deadline = self.deadline_entry.get()
+        duration = self.duration_entry.get()
+
+        if not title:
+            self.status_label.config(
+                text="Title is required!", foreground="red")
+            return
+
+        self.tree.insert("", "end", values=(title, desc, priority, deadline))
+        self.status_label.config(
+            text=f"Task '{title}' added.", foreground="green")
+        self.clear_inputs()
+
+    def edit_task(self):
+        selected = self.tree.selection()
         if not selected:
-            messagebox.showwarning(
-                "No Selection", "Please select a task first")
-            return None
-        return tree.item(selected)["values"][0]
+            self.status_label.config(
+                text="No task selected to edit!", foreground="orange")
+            return
 
-    def handle_add():
-        title = title_entry.get()
-        desc = desc_entry.get()
-        priority = priority_var.get()
-        deadline = deadline_entry.get()
+        item = self.tree.item(selected)
+        values = item["values"]
 
-        success, msg = add_task(title, desc, priority, deadline)
-        messagebox.showinfo("Add Task", msg)
-        if success:
-            refresh_tasks(tree)
-            clear_form()
+        self.title_entry.delete(0, tk.END)
+        self.title_entry.insert(0, values[0])
+        self.desc_entry.delete(0, tk.END)
+        self.desc_entry.insert(0, values[1])
+        self.priority_combo.set(values[2])
+        self.deadline_entry.delete(0, tk.END)
+        self.deadline_entry.insert(0, str(values[3]))
 
-    def handle_edit():
-        selected = tree.focus()
+        self.tree.delete(selected)
+        self.status_label.config(
+            text="Editing mode: Update fields and press 'Add Task' to re-add.", foreground="blue")
+
+    def delete_task(self):
+        selected = self.tree.selection()
         if not selected:
-            messagebox.showwarning(
-                "No Selection", "Please select a task first")
+            self.status_label.config(
+                text="No task selected to delete!", foreground="orange")
             return
 
-        try:
-            task_id = get_selected_task_id()
-            task = get_task_details(task_id)
+        for item in selected:
+            self.tree.delete(item)
+        self.status_label.config(text="Task(s) deleted.", foreground="red")
 
-            if not task:
-                messagebox.showerror("Error", "Task not found in database")
-                return
+    def clear_inputs(self):
+        self.title_entry.delete(0, tk.END)
+        self.desc_entry.delete(0, tk.END)
+        self.priority_combo.set("Medium")
+        self.deadline_entry.delete(0, tk.END)
+        self.deadline_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
 
-            clear_form()
-            title_entry.insert(0, task[1])
-            desc_entry.insert(0, task[2])
-            priority_var.set(task[3])
-            deadline_entry.insert(0, task[4])
 
-            add_btn.config(text="Update Task", command=lambda: handle_update(
-                task_id), bg="#2196F3", activebackground="#0b7dda")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load task: {str(e)}")
-
-    def handle_update(task_id):
-        title = title_entry.get()
-        desc = desc_entry.get()
-        priority = priority_var.get()
-        deadline = deadline_entry.get()
-
-        success, msg = update_task(task_id, title, desc, priority, deadline)
-        messagebox.showinfo("Update Task", msg)
-        if success:
-            refresh_tasks(tree)
-            clear_form()
-
-    def handle_delete():
-        task_id = get_selected_task_id()
-        if not task_id:
-            return
-
-        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this task?"):
-            return
-
-        success, msg = delete_task(task_id)
-        messagebox.showinfo("Delete Task", msg)
-        if success:
-            refresh_tasks(tree)
-            clear_form()
-
-    add_btn = tk.Button(button_frame, text="Add Task", command=handle_add, bg="#4CAF50", fg="white", font=(
-        "Arial", 10, "bold"), activebackground="#45a049", padx=10, pady=5, bd=0)
-    add_btn.pack(side=tk.LEFT, padx=5)
-
-    edit_btn = tk.Button(button_frame, text="Edit Task", command=handle_edit, bg="#FFC107", fg="black", font=(
-        "Arial", 10, "bold"), activebackground="#ffab00", padx=10, pady=5, bd=0)
-    edit_btn.pack(side=tk.LEFT, padx=5)
-
-    del_btn = tk.Button(button_frame, text="Delete Task", command=handle_delete, bg="#f44336", fg="white", font=(
-        "Arial", 10, "bold"), activebackground="#d32f2f", padx=10, pady=5, bd=0)
-    del_btn.pack(side=tk.LEFT, padx=5)
-
-    guide_frame = tk.Frame(frame, bg="#f0f0f0", padx=5, pady=5)
-    guide_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-
-    guide_text = """Quick Guide:
-1. Add Task: Fill fields and click 'Add Task'
-2. Edit: Select task > Click 'Edit' > Modify > 'Update Task'
-3. Delete: Select task > Click 'Delete'
-4. View Description: Double-click any task
-5. Search: Type in search box and click 'Go'"""
-
-    guide_label = tk.Label(guide_frame, text=guide_text,
-                           bg="#f0f0f0", fg="#333333",
-                           font=("Arial", 9), justify="left",
-                           anchor="w", padx=10, pady=5)
-    guide_label.pack(fill="x")
-
-    return frame
+# ---------- RUN ----------
+if __name__ == "__main__":
+    root = tb.Window(themename="flatly")
+    app = TaskSchedulerApp(root)
+    root.mainloop()

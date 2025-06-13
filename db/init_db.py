@@ -6,12 +6,9 @@ def init_db():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            # Drop table if exists to recreate with new schema
-            cur.execute("DROP TABLE IF EXISTS tasks")
-            
-            # Create table with new schema
+            # Create table only if it doesn't exist (preserves existing data)
             cur.execute("""
-                CREATE TABLE tasks (
+                CREATE TABLE IF NOT EXISTS tasks (
                     id SERIAL PRIMARY KEY,
                     title TEXT NOT NULL,
                     description TEXT,
@@ -22,7 +19,7 @@ def init_db():
                 )
             """)
             conn.commit()
-            print("Database schema updated successfully!")
+            print("Database initialized successfully!")
     except Exception as e:
         print(f"Database initialization error: {e}")
         conn.rollback()

@@ -11,14 +11,15 @@ class TaskSchedulerApp:
         self.root = root
         self.root.title("Smart Task Scheduler - Pan-Atlantic University")
         self.root.geometry("1000x700")
+
         self.style = tb.Style("flatly")
 
-        # Initialize database
+        # Initialize database and test connection
         try:
-            init_db()
+            init_db()  # This now only creates table if it doesn't exist
             test_conn = get_connection()
             test_conn.close()
-            print("Database connected successfully!")
+            print("Database connection successful!")
             self.db_connected = True
         except Exception as e:
             print(f"Database error: {e}")
@@ -322,22 +323,27 @@ class TaskSchedulerApp:
             return
 
         task_id = self.tree.item(selected)["values"][0]
+        
+        conn = self.get_db_connection()
+        if not conn:
+            return
 
         try:
-            cursor = self.conn.cursor()
+            cursor = conn.cursor()
             cursor.execute(
                 "SELECT title, description FROM tasks WHERE id = %s", (task_id,))
             task = cursor.fetchone()
 
             if task:
                 title, description = task
-                from tkinter import messagebox
                 messagebox.showinfo(
                     "Task Description",
                     f"Title: {title}\n\nDescription:\n{description if description else 'No description available'}"
                 )
         except Exception as e:
             self.status_var.set(f"Error loading task description: {str(e)}")
+        finally:
+            conn.close()
 
     def show_context_menu(self, event):
         """Show right-click context menu"""

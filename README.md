@@ -1,6 +1,6 @@
-Here's a comprehensive, professional README documentation for your Smart Task Scheduler project:
-
 # Smart Task Scheduler with Prioritization
+
+![Demo screenshot](image-1.png)
 
 ## Table of Contents
 1. [Project Overview](#project-overview)
